@@ -13,7 +13,7 @@
 //         <div className="flex items-center gap-4 text-xs">
 //           <div className="flex items-center gap-1">
 //             <Phone className="w-4 h-4" />
-//             <span>(683) 334-2124</span>
+//             <span>+9187123456</span>
 //           </div>
 //           <div className="flex items-center gap-1">
 //             <Mail className="w-4 h-4" />
@@ -79,7 +79,7 @@ export default function Nav() {
         <div className="flex items-center gap-4 text-xs">
           <div className="flex items-center gap-1">
             <Phone className="w-4 h-4" />
-            <span>(683) 334-2124</span>
+            <span>+9187123456</span>
           </div>
           <div className="flex items-center gap-1">
             <Mail className="w-4 h-4" />

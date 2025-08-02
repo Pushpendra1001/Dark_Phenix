@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
-import { AlertTriangle, Shield, Wifi, Ban, RefreshCw, Clock } from 'lucide-react';
+import { AlertTriangle, Shield, Wifi, Ban, RefreshCw, Clock, Play, Square, Trash2 } from 'lucide-react';
+
+const API_BASE_URL = 'http://localhost:5000';
 
 // Helper function to group logs by MAC address and summarize activity
 const summarizeLogs = (logs) => {
@@ -11,7 +13,7 @@ const summarizeLogs = (logs) => {
         lastSeen: log.timestamp,
         messageCount: 1,
         messages: [log.message],
-        signals: [parseInt(log.signal)],
+        signals: [parseInt(log.signal) || 0],
         channels: new Set([log.channel]),
         alerts: []
       };
@@ -19,7 +21,7 @@ const summarizeLogs = (logs) => {
       const entry = summary[log.mac];
       entry.messageCount++;
       entry.messages.push(log.message);
-      entry.signals.push(parseInt(log.signal));
+      entry.signals.push(parseInt(log.signal) || 0);
       entry.channels.add(log.channel);
       
       // Check for unusual activity
@@ -36,7 +38,7 @@ const summarizeLogs = (logs) => {
     mac,
     lastSeen: data.lastSeen,
     messageCount: data.messageCount,
-    avgSignal: Math.round(data.signals.reduce((a, b) => a + b, 0) / data.signals.length),
+    avgSignal: data.signals.length > 0 ? Math.round(data.signals.reduce((a, b) => a + b, 0) / data.signals.length) : 0,
     channels: Array.from(data.channels),
     alerts: data.alerts,
     mostFrequentMessage: getMostFrequent(data.messages)
@@ -68,37 +70,132 @@ export default function NetworkLogs() {
   const [blockedMacs, setBlockedMacs] = useState(new Set());
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [snifferStatus, setSnifferStatus] = useState('unknown');
+  const [isRealTime, setIsRealTime] = useState(false);
 
-  useEffect(() => {
-    const fetchLogs = async () => {
-      try {
-        setRefreshing(true);
-        const response = await fetch('http://localhost:5000/logs');
-        if (!response.ok) throw new Error('Failed to fetch logs');
+  // Check sniffer status
+  const checkStatus = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/status`);
+      if (response.ok) {
         const data = await response.json();
+        setSnifferStatus(data.sniffing ? 'running' : 'stopped');
+      }
+    } catch (err) {
+      console.error('Error checking status:', err);
+    }
+  };
+
+  // Fetch logs (initial load or manual refresh)
+  const fetchLogs = async () => {
+    try {
+      setRefreshing(true);
+      const response = await fetch(`${API_BASE_URL}/logs`);
+      if (!response.ok) throw new Error('Failed to fetch logs');
+      const data = await response.json();
+      setLogs(data);
+      setSummary(summarizeLogs(data));
+      setLastUpdate(new Date());
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+      console.error('Error fetching logs:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  // Real-time log fetching
+  const fetchLiveLogs = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/logs/live`);
+      if (!response.ok) throw new Error('Failed to fetch live logs');
+      const data = await response.json();
+      if (data.length > 0) {
         setLogs(data);
         setSummary(summarizeLogs(data));
         setLastUpdate(new Date());
-        setError(null);
-      } catch (err) {
-        setError(err.message);
-        console.error('Error fetching logs:', err);
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
       }
-    };
+    } catch (err) {
+      console.error('Error fetching live logs:', err);
+    }
+  };
 
+  useEffect(() => {
+    // Initial load
+    checkStatus();
     fetchLogs();
-    // Poll for new logs every 5 seconds
-    const interval = setInterval(fetchLogs, 5000);
-    return () => clearInterval(interval);
-  }, []);
+
+    // Set up real-time polling when enabled
+    let interval;
+    if (isRealTime) {
+      interval = setInterval(fetchLiveLogs, 2000); // Check every 2 seconds for real-time
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isRealTime]);
+
+  const handleStartSniffer = async () => {
+    try {
+      setRefreshing(true);
+      const response = await fetch(`${API_BASE_URL}/start`);
+      if (!response.ok) throw new Error('Failed to start sniffer');
+      const result = await response.json();
+      setSnifferStatus('running');
+      setIsRealTime(true); // Auto-enable real-time when starting
+      alert('Network sniffer started successfully!');
+    } catch (err) {
+      alert(`Failed to start sniffer: ${err.message}`);
+      console.error('Error starting sniffer:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleStopSniffer = async () => {
+    try {
+      setRefreshing(true);
+      const response = await fetch(`${API_BASE_URL}/stop`);
+      if (!response.ok) throw new Error('Failed to stop sniffer');
+      const result = await response.json();
+      setSnifferStatus('stopped');
+      setIsRealTime(false); // Disable real-time when stopping
+      alert('Network sniffer stopped successfully!');
+    } catch (err) {
+      alert(`Failed to stop sniffer: ${err.message}`);
+      console.error('Error stopping sniffer:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleClearLogs = async () => {
+    if (!confirm('Are you sure you want to clear all logs? This action cannot be undone.')) {
+      return;
+    }
+    
+    try {
+      setRefreshing(true);
+      const response = await fetch(`${API_BASE_URL}/logs/clear`, { method: 'POST' });
+      if (!response.ok) throw new Error('Failed to clear logs');
+      setLogs([]);
+      setSummary([]);
+      setLastUpdate(new Date());
+      alert('All logs cleared successfully!');
+    } catch (err) {
+      alert(`Failed to clear logs: ${err.message}`);
+      console.error('Error clearing logs:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const handleBlockMac = async (mac) => {
     try {
       setRefreshing(true);
-      const response = await fetch(`http://localhost:5000/block/${mac}`);
+      const response = await fetch(`${API_BASE_URL}/block/${mac}`);
       if (!response.ok) throw new Error('Failed to block MAC address');
       const result = await response.json();
       setBlockedMacs(prev => new Set([...prev, mac]));
@@ -106,22 +203,6 @@ export default function NetworkLogs() {
     } catch (err) {
       alert(`Failed to block MAC address: ${err.message}`);
       console.error('Error blocking MAC:', err);
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  const handleStartSniffer = async () => {
-    try {
-      setRefreshing(true);
-      const response = await fetch('http://localhost:5000/start');
-      if (!response.ok) throw new Error('Failed to start sniffer');
-      const result = await response.json();
-      setSnifferStatus('running');
-      alert('Network sniffer started successfully!');
-    } catch (err) {
-      alert(`Failed to start sniffer: ${err.message}`);
-      console.error('Error starting sniffer:', err);
     } finally {
       setRefreshing(false);
     }
@@ -176,13 +257,66 @@ export default function NetworkLogs() {
             </h2>
             
             <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${
+                  snifferStatus === 'running' ? 'bg-green-500' : 
+                  snifferStatus === 'stopped' ? 'bg-red-500' : 'bg-gray-500'
+                }`}></div>
+                <span className="text-sm text-gray-400">
+                  Sniffer: {snifferStatus === 'running' ? 'Running' : 
+                          snifferStatus === 'stopped' ? 'Stopped' : 'Unknown'}
+                </span>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="realtime"
+                  checked={isRealTime}
+                  onChange={(e) => setIsRealTime(e.target.checked)}
+                  className="rounded"
+                />
+                <label htmlFor="realtime" className="text-sm text-gray-400">
+                  Real-time {isRealTime && '(Live)'}
+                </label>
+              </div>
+
+              {snifferStatus !== 'running' ? (
+                <button
+                  onClick={handleStartSniffer}
+                  disabled={refreshing}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-4 py-2 rounded flex items-center gap-2 transition-colors"
+                >
+                  <Play className="w-4 h-4" />
+                  Start Sniffer
+                </button>
+              ) : (
+                <button
+                  onClick={handleStopSniffer}
+                  disabled={refreshing}
+                  className="bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white px-4 py-2 rounded flex items-center gap-2 transition-colors"
+                >
+                  <Square className="w-4 h-4" />
+                  Stop Sniffer
+                </button>
+              )}
+
               <button
-                onClick={handleStartSniffer}
+                onClick={fetchLogs}
                 disabled={refreshing}
-                className="bg-[#fd594e] hover:bg-[#e54e44] disabled:bg-gray-600 text-white px-4 py-2 rounded flex items-center gap-2 transition-colors"
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-4 py-2 rounded flex items-center gap-2 transition-colors"
               >
-                <Shield className="w-4 h-4" />
-                Start Network Monitoring
+                <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+
+              <button
+                onClick={handleClearLogs}
+                disabled={refreshing}
+                className="bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 text-white px-4 py-2 rounded flex items-center gap-2 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                Clear Logs
               </button>
             </div>
           </div>
@@ -196,9 +330,10 @@ export default function NetworkLogs() {
             <div>Active Threats: {summary.reduce((acc, device) => acc + device.alerts.length, 0)}</div>
             <div className="flex items-center gap-1">
               <div className={`w-2 h-2 rounded-full ${
+                isRealTime && logs.length > 0 ? 'bg-green-500 animate-pulse' : 
                 logs.length > 0 ? 'bg-green-500' : 'bg-gray-500'
               }`}></div>
-              Status: {logs.length > 0 ? 'Active' : 'No Activity'}
+              Status: {isRealTime ? 'Live Monitoring' : logs.length > 0 ? 'Data Available' : 'No Activity'}
             </div>
           </div>
         </div>

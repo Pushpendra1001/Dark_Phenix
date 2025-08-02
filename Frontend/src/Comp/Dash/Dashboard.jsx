@@ -4,7 +4,9 @@ import { useState, useEffect } from "react"
 import { Shield, Wifi, AlertTriangle, Activity, Users, Lock, TrendingUp, TrendingDown, Layers } from "lucide-react"
 import NetworkLogs from './NetworkLogs';
 
-// Mock WiFi data
+const API_BASE_URL = 'http://localhost:5000';
+
+// Mock WiFi data for demo purposes - in real implementation, this would come from your backend
 const generateWiFiData = () => {
   const networks = [
     { name: "Shakti-Main", type: "Corporate" },
@@ -31,19 +33,67 @@ const generateWiFiData = () => {
 export default function Dashboard() {
   const [wifiData, setWifiData] = useState(generateWiFiData())
   const [selectedNetwork, setSelectedNetwork] = useState(null)
+  const [realTimeStats, setRealTimeStats] = useState({
+    totalDevices: 0,
+    activeNetworks: 0,
+    totalThreats: 0,
+    avgSignal: 0
+  })
+  const [isLive, setIsLive] = useState(false)
+
+  // Fetch real-time statistics from backend
+  const fetchRealTimeStats = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/logs/live`)
+      if (response.ok) {
+        const logs = await response.json()
+        if (logs.length > 0) {
+          // Calculate stats from actual logs
+          const uniqueMacs = new Set(logs.map(log => log.mac))
+          const threats = logs.filter(log => log.message === 'DeAuthentication').length
+          const avgSignal = logs.reduce((sum, log) => sum + (parseInt(log.signal) || 0), 0) / logs.length
+          
+          setRealTimeStats({
+            totalDevices: uniqueMacs.size,
+            activeNetworks: Math.min(uniqueMacs.size, 5), // Assume max 5 networks
+            totalThreats: threats,
+            avgSignal: Math.round(avgSignal || 0)
+          })
+          setIsLive(true)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching real-time stats:', error)
+      setIsLive(false)
+    }
+  }
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setWifiData(generateWiFiData())
-    }, 5000) // Update every 5 seconds
+    // Initial data load
+    setWifiData(generateWiFiData())
+    fetchRealTimeStats()
 
-    return () => clearInterval(interval)
+    // Update mock data every 5 seconds for demo
+    const mockInterval = setInterval(() => {
+      setWifiData(generateWiFiData())
+    }, 5000)
+
+    // Fetch real-time stats every 3 seconds
+    const statsInterval = setInterval(fetchRealTimeStats, 3000)
+
+    return () => {
+      clearInterval(mockInterval)
+      clearInterval(statsInterval)
+    }
   }, [])
 
-  const totalDevices = wifiData.reduce((sum, network) => sum + network.connectedDevices, 0)
-  const activeNetworks = wifiData.filter((network) => network.status === "Active").length
-  const totalThreats = wifiData.reduce((sum, network) => sum + network.threats, 0)
-  const avgSignal = Math.round(wifiData.reduce((sum, network) => sum + network.signalStrength, 0) / wifiData.length)
+  // Use real-time stats if available, otherwise fall back to mock data
+  const displayStats = isLive ? realTimeStats : {
+    totalDevices: wifiData.reduce((sum, network) => sum + network.connectedDevices, 0),
+    activeNetworks: wifiData.filter((network) => network.status === "Active").length,
+    totalThreats: wifiData.reduce((sum, network) => sum + network.threats, 0),
+    avgSignal: Math.round(wifiData.reduce((sum, network) => sum + network.signalStrength, 0) / wifiData.length)
+  }
 
   return (
     <div className="min-h-screen bg-[#0e0e0f]">
@@ -52,22 +102,23 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold text-white flex items-center gap-3">
             <Layers className="w-8 h-8 text-[#fd594e]" />
             Network Security Dashboard
+            {isLive && <span className="text-sm bg-green-600 px-2 py-1 rounded text-white">LIVE</span>}
           </h1>
           <p className="mt-2 text-[#c5c5c5]">
             Monitor network activity and security alerts in real-time
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        {/* <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-[#1a1a1c] border border-[#2e2e30] p-6 rounded-2xl">
             <div className="flex items-center gap-3 mb-2">
               <Wifi className="w-6 h-6 text-[#fd594e]" />
               <span className="text-sm text-[#b0b0b0]">Active Networks</span>
             </div>
-            <div className="text-3xl font-bold text-white">{activeNetworks}</div>
+            <div className="text-3xl font-bold text-white">{displayStats.activeNetworks}</div>
             <div className="text-xs text-green-400 flex items-center gap-1 mt-1">
               <TrendingUp className="w-3 h-3" />
-              +2 from yesterday
+              {isLive ? 'Live Data' : '+2 from yesterday'}
             </div>
           </div>
 
@@ -76,10 +127,10 @@ export default function Dashboard() {
               <Users className="w-6 h-6 text-[#fd594e]" />
               <span className="text-sm text-[#b0b0b0]">Connected Devices</span>
             </div>
-            <div className="text-3xl font-bold text-white">{totalDevices}</div>
+            <div className="text-3xl font-bold text-white">{displayStats.totalDevices}</div>
             <div className="text-xs text-green-400 flex items-center gap-1 mt-1">
               <TrendingUp className="w-3 h-3" />
-              +12 from last hour
+              {isLive ? 'Real-time Count' : '+12 from last hour'}
             </div>
           </div>
 
@@ -88,10 +139,10 @@ export default function Dashboard() {
               <AlertTriangle className="w-6 h-6 text-[#fd594e]" />
               <span className="text-sm text-[#b0b0b0]">Security Threats</span>
             </div>
-            <div className="text-3xl font-bold text-white">{totalThreats}</div>
+            <div className="text-3xl font-bold text-white">{displayStats.totalThreats}</div>
             <div className="text-xs text-red-400 flex items-center gap-1 mt-1">
               <TrendingDown className="w-3 h-3" />
-              -3 from yesterday
+              {isLive ? 'DeAuth Attacks' : '-3 from yesterday'}
             </div>
           </div>
 
@@ -100,15 +151,15 @@ export default function Dashboard() {
               <Activity className="w-6 h-6 text-[#fd594e]" />
               <span className="text-sm text-[#b0b0b0]">Avg Signal Strength</span>
             </div>
-            <div className="text-3xl font-bold text-white">{avgSignal}%</div>
+            <div className="text-3xl font-bold text-white">{displayStats.avgSignal}%</div>
             <div className="text-xs text-green-400 flex items-center gap-1 mt-1">
               <TrendingUp className="w-3 h-3" />
-              +5% from last check
+              {isLive ? 'Live Average' : '+5% from yesterday'}
             </div>
           </div>
-        </div>
+        </div> */}
 
-        {/* WiFi Networks Table */}
+        {/* WiFi Networks Table
         <div className="bg-[#1a1a1c] border border-[#2e2e30] rounded-2xl overflow-hidden">
           <div className="px-6 py-4 border-b border-[#2e2e30]">
             <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -201,9 +252,9 @@ export default function Dashboard() {
               </tbody>
             </table>
           </div>
-        </div>
+        </div> */}
 
-        {/* Recent Alerts */}
+        {/* Recent Alerts
         <div className="mt-8 bg-[#1a1a1c] border border-[#2e2e30] rounded-2xl p-6">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-[#fd594e]" />
@@ -232,7 +283,7 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
-        </div>
+        </div> */}
 
         <NetworkLogs />
       </div>

@@ -21,7 +21,7 @@
 //           <div>
 //             <div className="flex items-center gap-3 mb-1">
 //               <Phone className="w-4 h-4" />
-//               <span className="font-semibold">(683) 334-2124</span>
+//               <span className="font-semibold">+9187123456</span>
 //             </div>
 //             <div className="flex justify-between text-sm text-[#a0a0a0] border-b border-[#2a2a2b] pb-1">
 //               <span>Call For A Consultation</span>
@@ -135,7 +135,7 @@ const Footer = () => {
             <div className="flex items-center gap-3 mb-1">
               <Phone className="w-4 h-4 text-[#fd594e] group-hover:scale-110 transition-transform duration-300" />
               <span className="font-semibold group-hover:text-[#fd594e] transition-colors duration-300">
-                (683) 334-2124
+                +9187123456
               </span>
             </div>
             <div className="flex justify-between text-sm text-[#a0a0a0] border-b border-[#2a2a2b] pb-1 group-hover:border-[#fd594e]/50 group-hover:text-[#b0b0b0] transition-all duration-300">
