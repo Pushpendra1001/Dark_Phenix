@@ -29,12 +29,23 @@ def init_db():
                 )
             ''')
             conn.commit()
-        logging.info("Database initialized.")
+            
+            # Verify table was created
+            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='logs'")
+            if c.fetchone():
+                logging.info("Database initialized successfully - 'logs' table exists.")
+            else:
+                logging.error("Failed to create 'logs' table.")
+                return False
+        return True
     except Exception as e:
         logging.error(f"Failed to initialize database: {e}")
+        return False
 
 def insert_log(mac, signal, channel, message):
     ensure_db_dir()
+    # Ensure database is initialized before inserting
+    init_db()
     try:
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
@@ -47,6 +58,9 @@ def insert_log(mac, signal, channel, message):
 
 def fetch_logs(limit=50):
     ensure_db_dir()
+    # Ensure database is initialized before fetching
+    if not init_db():
+        return []
     try:
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
@@ -56,3 +70,36 @@ def fetch_logs(limit=50):
     except Exception as e:
         logging.error(f"Failed to fetch logs: {e}")
         return []
+
+def get_latest_logs(last_id=0):
+    """Get logs newer than the given ID for real-time streaming"""
+    ensure_db_dir()
+    # Ensure database is initialized before fetching
+    if not init_db():
+        return []
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            c = conn.cursor()
+            c.execute("SELECT id, timestamp, mac, signal, channel, message FROM logs WHERE id > ? ORDER BY id ASC", (last_id,))
+            rows = c.fetchall()
+        return rows
+    except Exception as e:
+        logging.error(f"Failed to fetch latest logs: {e}")
+        return []
+
+def clear_logs():
+    """Clear all logs from the database"""
+    ensure_db_dir()
+    # Ensure database is initialized before clearing
+    if not init_db():
+        return False
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            c = conn.cursor()
+            c.execute("DELETE FROM logs")
+            conn.commit()
+        logging.info("All logs cleared.")
+        return True
+    except Exception as e:
+        logging.error(f"Failed to clear logs: {e}")
+        return False
